@@ -11,13 +11,13 @@ type master struct {
 	stages []*stage
 }
 
-// NewMaster returns a new instance of a master node which is responsible for managing the workers.
+// New returns a new instance of a master node which is responsible for managing the workers.
 // Each stage of the pipeline instantiates a number of worker nodes proportional to its weight using the provided
 // WorkerBuilderFunc.
 // totalNodesNum is the total number of nodes the user wants to be spawned and used for this pipeline.
 // A slice of StageSpec needs to be provided to create the pipeline's stage.
 // totalWeights is the total weight of the stages plus the weight of the source and sink of the pipeline.
-func NewMaster(workerBuilder WorkerBuilderFunc, totalNodesNum, totalWeights int, specs ...StageSpec) *master {
+func New(workerBuilder WorkerBuilderFunc, totalNodesNum, totalWeights int, specs ...StageSpec) *master {
 	// creating the pipeline's stages
 	// each stage spawns a bunch of worker nodes proportional to its weight
 	var stages = make([]*stage, len(specs))
