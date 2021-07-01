@@ -7,6 +7,8 @@ import (
 
 // StageSpec is the specification for a stage of the pipeline.
 type StageSpec interface {
+	// Name of this stage
+	Name() string
 	// Weight is used to determine how many worker nodes out of the total available nodes should be assigned to
 	// this stage.
 	Weight() int

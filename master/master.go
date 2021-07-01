@@ -23,7 +23,7 @@ func New(workerBuilder WorkerBuilderFunc, totalNodesNum, totalWeights int, specs
 	var stages = make([]*stage, len(specs))
 	for i, spec := range specs {
 		workersNum := spec.Weight() / totalWeights * totalNodesNum
-		stages[i] = newStage(spec.Processor(), workerBuilder, workersNum)
+		stages[i] = newStage(spec.Name(), spec.Processor(), workerBuilder, workersNum)
 	}
 
 	return &master{
