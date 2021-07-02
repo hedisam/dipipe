@@ -21,7 +21,7 @@ type stage struct {
 	// wMutex controls concurrent access to the workers slice.
 	wMutex sync.RWMutex
 	// idles is a queue which keeps track of idle workers
-	idles *idleQueue
+	idles IdlesQueue
 }
 
 // newStage returns an instance of stage which is responsible for running and maintaining the worker nodes corresponding
@@ -30,14 +30,14 @@ type stage struct {
 // plugin is the user-defined code to be ran by the worker nodes of this stage.
 // workerBuilder builds and returns a worker node which will be managed by this stage.
 // workersNum specified the number of worker nodes that should be spawned for this stage.
-func newStage(name string, plugin StagePlugin, workerBuilder WorkerBuilderFunc, workersNum int) *stage {
+func newStage(name string, plugin StagePlugin, workerBuilder WorkerBuilderFunc, workersNum int, idles IdlesQueue) *stage {
 	return &stage{
 		name: name,
 		plugin: plugin,
 		workerBuilder: workerBuilder,
 		workersNum: workersNum,
 		workers: make(map[string]*WorkerState),
-		idles: newIdleQueue(),
+		idles: idles,
 	}
 }
 
@@ -54,28 +54,8 @@ func (s *stage) Setup(ctx context.Context) error {
 	// spawn all the worker nodes concurrently
 	for i := 1; i <= s.workersNum; i++ {
 		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-
-			// instantiate a worker node
-			workerName := fmt.Sprintf("%s:worker:%d", s.name, i)
-			worker := s.workerBuilder(workerName, s.plugin)
-			// spawn an executable or a docker container for the worker
-			err := worker.Spawn(spawnCtx)
-			if err != nil {
-				select {
-				case <-spawnCtx.Done(): return
-				case errorCh <- fmt.Errorf("stage: Run: failed to spawn the worker %s: %w", workerName, err):
-				}
-			}
-
-			s.wMutex.Lock()
-			s.workers[workerName] = &WorkerState{worker: worker, state: workerIDLE}
-			s.wMutex.Unlock()
-
-			// put this worker in the idles queue
-			s.idles.Put(ctx, worker)
-		}(i)
+		workerName := fmt.Sprintf("%s:worker:%d", s.name, i)
+		go s.spawnWorker(spawnCtx, workerName, wg, errorCh)
 	}
 
 	go func() {
@@ -88,20 +68,40 @@ func (s *stage) Setup(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return nil
-	case err, ok := <- errorCh:
+	case err, ok := <-errorCh:
 		if ok {
-			// the channel is not closed and we have received an error message.
+			// the channel is not closed so we have received an error message.
 			err = fmt.Errorf("stage %s: Run: failed to spawn one of the worker nodes: %w", s.name, err)
-			// cancel out the spawner context
 			cancelCtx()
-			// wait for all the goroutines to return
 			wg.Wait()
 			return err
 		}
+		// if we're here it means that all of the worker nodes have bee spawned successfully
 	}
 
-	// all the worker nodes have been spawned and are running.
 	return nil
+}
+
+func (s *stage) spawnWorker(ctx context.Context, name string, wg *sync.WaitGroup, errorCh chan error) {
+	defer wg.Done()
+
+	// instantiate a worker node
+	worker := s.workerBuilder(name, s.plugin)
+	// spawn an executable or a docker container for the worker
+	err := worker.Spawn(ctx)
+	if err != nil {
+		select {
+		case <-ctx.Done(): return
+		case errorCh <- fmt.Errorf("stage: Run: failed to spawn the worker %s: %w", name, err):
+		}
+	}
+
+	s.wMutex.Lock()
+	s.workers[name] = &WorkerState{worker: worker, state: workerIDLE}
+	s.wMutex.Unlock()
+
+	// keeping track of idle workers
+	s.idles.Enqueue(ctx, worker)
 }
 
 func (s *stage) Dispose() {

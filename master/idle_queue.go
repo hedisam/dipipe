@@ -28,7 +28,7 @@ func newIdleQueue() *idleQueue {
 	return q
 }
 
-func (q *idleQueue) Put(ctx context.Context, w Worker) {
+func (q *idleQueue) Enqueue(ctx context.Context, w Worker) {
 	select {
 	case <-ctx.Done(): return
 	case <-q.done: return
@@ -36,18 +36,22 @@ func (q *idleQueue) Put(ctx context.Context, w Worker) {
 	}
 }
 
-func (q *idleQueue) Get(ctx context.Context) (Worker, bool) {
+func (q *idleQueue) Dequeue(ctx context.Context) Worker {
 	ch := make(chan Worker)
 	select {
-	case <-ctx.Done(): return nil, false
-	case <-q.done: return nil, false
+	case <-ctx.Done(): return nil
+	case <-q.done: return nil
 	case q.readCh <- ch:
 		select {
-		case <-ctx.Done(): return nil, false
+		case <-ctx.Done(): return nil
 		case w := <-ch:
-			return w, true
+			return w
 		}
 	}
+}
+
+func (q *idleQueue) Dispose() {
+	close(q.done)
 }
 
 func (q *idleQueue) run() {
@@ -81,10 +85,6 @@ func (q *idleQueue) run() {
 			}
 		}
 	}()
-}
-
-func (q *idleQueue) Dispose() {
-	close(q.done)
 }
 
 func (q *idleQueue) enqueue(w Worker) {

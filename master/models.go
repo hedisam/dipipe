@@ -49,3 +49,11 @@ const (
 	// workerFATAL describes a worker which has terminated abnormally and needs to be restarted.
 	workerFATAL
 )
+
+type IdlesQueue interface {
+	// Enqueue a worker
+	Enqueue(ctx context.Context, worker Worker)
+	// Dequeue a worker. Blocks forever if no idle workers are available, unless the context gets cancelled.
+	Dequeue(ctx context.Context) Worker
+	Dispose()
+}
