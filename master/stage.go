@@ -37,15 +37,14 @@ func newStage(name string, plugin StagePlugin, workerBuilder WorkerBuilderFunc, 
 		workerBuilder: workerBuilder,
 		workersNum: workersNum,
 		workers: make(map[string]*WorkerState),
+		idles: newIdleQueue(),
 	}
 }
 
-// Run the stage by spawning the workers. It returns an error if it fails to spawn any of the worker nodes.
+// Setup the stage by spawning the workers. It returns an error if it fails to spawn any of the worker nodes.
 // TODO: (this behaviour should be configurable by the user since if there's a shortage of available nodes the user may
 // be ok with carrying on with what she's got).
-func (s *stage) Run(ctx context.Context) error {
-	s.idles = newIdleQueue(ctx)
-
+func (s *stage) Setup(ctx context.Context) error {
 	wg := &sync.WaitGroup{}
 	errorCh := make(chan error)
 
@@ -103,4 +102,8 @@ func (s *stage) Run(ctx context.Context) error {
 
 	// all the worker nodes have been spawned and are running.
 	return nil
+}
+
+func (s *stage) Dispose() {
+	s.idles.Dispose()
 }
