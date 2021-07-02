@@ -3,35 +3,39 @@ package master
 import (
 	"context"
 	"fmt"
-	"github.com/hedisam/dipipe/models"
+	"sync"
 )
 
 // stage holds a list of workers and their state for a specific stage of the pipeline.
 type stage struct {
-	// name is the name of this stage
+	// name of this stage
 	name string
-	// proc is the user-defined processor for this stage
-	proc models.Processor
-	// workerBuilder instantiate and returns a worker with the given stage processor
+	// plugin is the user-defined code to be ran on this stage.
+	plugin StagePlugin
+	// workerBuilder instantiate and returns a worker.
 	workerBuilder WorkerBuilderFunc
-	// workers holds the state of running worker nodes.
-	workers []Worker
+	// workersNum is the number of worker nodes required for this stage.
+	workersNum int
+	// workers holds the running workers along with their state.
+	workers map[string]*WorkerState
+	// wMutex controls concurrent access to the workers slice.
+	wMutex sync.RWMutex
+	// idles
 }
 
-// newStage returns an instance of stage which is responsible for holding the worker nodes' stage of the corresponding
-// stage.
-func newStage(name string, proc models.Processor, workerBuilder WorkerBuilderFunc, workersNum int) *stage {
-	// instantiate the required worker nodes for this stage
-	workers := make([]Worker, 0, workersNum)
-	for i := 0; i < workersNum; i++ {
-		workers = append(workers, workerBuilder(proc))
-	}
-
+// newStage returns an instance of stage which is responsible for running and maintaining the worker nodes corresponding
+// to a pipeline's stage.
+// name represents the name of this stage.
+// plugin is the user-defined code to be ran by the worker nodes of this stage.
+// workerBuilder builds and returns a worker node which will be managed by this stage.
+// workersNum specified the number of worker nodes that should be spawned for this stage.
+func newStage(name string, plugin StagePlugin, workerBuilder WorkerBuilderFunc, workersNum int) *stage {
 	return &stage{
 		name: name,
-		proc:          proc,
+		plugin: plugin,
 		workerBuilder: workerBuilder,
-		workers:       workers,
+		workersNum: workersNum,
+		workers: make(map[string]*WorkerState),
 	}
 }
 
@@ -39,21 +43,60 @@ func newStage(name string, proc models.Processor, workerBuilder WorkerBuilderFun
 // TODO: (this behaviour should be configurable by the user since if there's a shortage of available nodes the user may
 // be ok with carrying on with what she's got).
 func (s *stage) Run(ctx context.Context) error {
-	var err error
+	wg := &sync.WaitGroup{}
+	errorCh := make(chan error)
 
-	for _, w := range s.workers {
-		err = w.Spawn(ctx)
-		if err != nil {
-			// stop the nodes that have been spawned so far
-			// TODO: log the error
-			_ = s.Stop(ctx)
-			return fmt.Errorf("stage %s: Run: failed to spawn a worker node: %w", s.name, err)
+	spawnCtx, cancelCtx := context.WithCancel(ctx)
+	defer cancelCtx()
+
+	// spawn all the worker nodes concurrently
+	for i := 1; i <= s.workersNum; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+
+			// instantiate a worker node
+			workerName := fmt.Sprintf("%s:worker:%d", s.name, i)
+			worker := s.workerBuilder(workerName, s.plugin)
+			// spawn an executable or a docker container for the worker
+			err := worker.Spawn(spawnCtx)
+			if err != nil {
+				select {
+				case <-spawnCtx.Done(): return
+				case errorCh <- fmt.Errorf("stage: Run: failed to spawn the worker %s: %w", workerName, err):
+				}
+			}
+
+			s.wMutex.Lock()
+			s.workers[workerName] = &WorkerState{worker: worker, state: workerIDLE}
+			s.wMutex.Unlock()
+
+			// todo: add the worker to the idles queue
+		}(i)
+	}
+
+	go func() {
+		wg.Wait()
+		// all the nodes have been spawned successfully, we can safely close the error channel as there's no one left
+		// to write to it. also closing it signals that all the nodes are spawned and running.
+		close(errorCh)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil
+	case err, ok := <- errorCh:
+		if ok {
+			// the channel is not closed and we have received an error message.
+			err = fmt.Errorf("stage %s: Run: failed to spawn one of the worker nodes: %w", s.name, err)
+			// cancel out the spawner context
+			cancelCtx()
+			// wait for all the goroutines to return
+			wg.Wait()
+			return err
 		}
 	}
 
+	// all the worker nodes have been spawned and are running.
 	return nil
-}
-
-func (s *stage) Stop(ctx context.Context) error {
-	panic("implement stage.Stop")
 }
