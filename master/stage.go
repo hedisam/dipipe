@@ -20,7 +20,8 @@ type stage struct {
 	workers map[string]*WorkerState
 	// wMutex controls concurrent access to the workers slice.
 	wMutex sync.RWMutex
-	// idles
+	// idles is a queue which keeps track of idle workers
+	idles *idleQueue
 }
 
 // newStage returns an instance of stage which is responsible for running and maintaining the worker nodes corresponding
@@ -43,6 +44,8 @@ func newStage(name string, plugin StagePlugin, workerBuilder WorkerBuilderFunc, 
 // TODO: (this behaviour should be configurable by the user since if there's a shortage of available nodes the user may
 // be ok with carrying on with what she's got).
 func (s *stage) Run(ctx context.Context) error {
+	s.idles = newIdleQueue(ctx)
+
 	wg := &sync.WaitGroup{}
 	errorCh := make(chan error)
 
@@ -71,7 +74,8 @@ func (s *stage) Run(ctx context.Context) error {
 			s.workers[workerName] = &WorkerState{worker: worker, state: workerIDLE}
 			s.wMutex.Unlock()
 
-			// todo: add the worker to the idles queue
+			// put this worker in the idles queue
+			s.idles.Put(ctx, worker)
 		}(i)
 	}
 
