@@ -6,8 +6,8 @@ import (
 	"sync"
 )
 
-// stage holds a list of workers and their state for a specific stage of the pipeline.
-type stage struct {
+// stageRunner holds a list of workers and their state for a specific stage of the pipeline.
+type stageRunner struct {
 	// name of this stage
 	name string
 	// plugin is the user-defined code to be ran on this stage.
@@ -24,27 +24,27 @@ type stage struct {
 	idles IdlesQueue
 }
 
-// newStage returns an instance of stage which is responsible for running and maintaining the worker nodes corresponding
-// to a pipeline's stage.
+// newStage returns an instance of stageRunner which is responsible for running and maintaining the worker nodes of a
+// stage of the pipeline.
 // name represents the name of this stage.
 // plugin is the user-defined code to be ran by the worker nodes of this stage.
 // workerBuilder builds and returns a worker node which will be managed by this stage.
 // workersNum specified the number of worker nodes that should be spawned for this stage.
-func newStage(name string, plugin StagePlugin, workerBuilder WorkerBuilderFunc, workersNum int, idles IdlesQueue) *stage {
-	return &stage{
-		name: name,
-		plugin: plugin,
+func newStage(name string, plugin StagePlugin, workerBuilder WorkerBuilderFunc, workersNum int, idles IdlesQueue) *stageRunner {
+	return &stageRunner{
+		name:          name,
+		plugin:        plugin,
 		workerBuilder: workerBuilder,
-		workersNum: workersNum,
-		workers: make(map[string]*WorkerState),
-		idles: idles,
+		workersNum:    workersNum,
+		workers:       make(map[string]*WorkerState),
+		idles:         idles,
 	}
 }
 
 // Setup the stage by spawning the workers. It returns an error if it fails to spawn any of the worker nodes.
 // TODO: (this behaviour should be configurable by the user since if there's a shortage of available nodes the user may
 // be ok with carrying on with what she's got).
-func (s *stage) Setup(ctx context.Context) error {
+func (s *stageRunner) Setup(ctx context.Context) error {
 	wg := &sync.WaitGroup{}
 	errorCh := make(chan error)
 
@@ -71,7 +71,7 @@ func (s *stage) Setup(ctx context.Context) error {
 	case err, ok := <-errorCh:
 		if ok {
 			// the channel is not closed so we have received an error message.
-			err = fmt.Errorf("stage %s: Run: failed to spawn one of the worker nodes: %w", s.name, err)
+			err = fmt.Errorf("stageRunner %s: Run: failed to spawn one of the worker nodes: %w", s.name, err)
 			cancelCtx()
 			wg.Wait()
 			return err
@@ -82,7 +82,7 @@ func (s *stage) Setup(ctx context.Context) error {
 	return nil
 }
 
-func (s *stage) spawnWorker(ctx context.Context, name string, wg *sync.WaitGroup, errorCh chan error) {
+func (s *stageRunner) spawnWorker(ctx context.Context, name string, wg *sync.WaitGroup, errorCh chan error) {
 	defer wg.Done()
 
 	// instantiate a worker node
@@ -91,8 +91,9 @@ func (s *stage) spawnWorker(ctx context.Context, name string, wg *sync.WaitGroup
 	err := worker.Spawn(ctx)
 	if err != nil {
 		select {
-		case <-ctx.Done(): return
-		case errorCh <- fmt.Errorf("stage: Run: failed to spawn the worker %s: %w", name, err):
+		case <-ctx.Done():
+			return
+		case errorCh <- fmt.Errorf("stageRunner: Run: failed to spawn the worker %s: %w", name, err):
 		}
 	}
 
@@ -104,6 +105,6 @@ func (s *stage) spawnWorker(ctx context.Context, name string, wg *sync.WaitGroup
 	s.idles.Enqueue(ctx, worker)
 }
 
-func (s *stage) Dispose() {
+func (s *stageRunner) Dispose() {
 	s.idles.Dispose()
 }

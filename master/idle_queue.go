@@ -8,7 +8,7 @@ type idleQNode struct {
 	next *idleQNode
 }
 
-// idleQueue is used by a stage to queue its idle worker nodes.
+// idleQueue is used by a stageRunner to queue its idle worker nodes.
 type idleQueue struct {
 	head    *idleQNode
 	tail    *idleQNode
