@@ -61,3 +61,21 @@ type Job struct {
 	// Path to the input data
 	Path string
 }
+
+// BlockingIdlesQueue is a thread-safe queue used to hold idle workers.
+type BlockingIdlesQueue interface {
+	// Enqueue a worker. It needs to be thread-safe.
+	Enqueue(w Worker)
+	// Dequeue a worker. It blocks until it gets an idle worker.
+	Dequeue() Worker
+	// TryDequeue tries to dequeue a worker, returns nil if there's no idle workers in the queue.
+	TryDequeue() Worker
+}
+
+// IdlesQueue used to hold idle workers.
+type IdlesQueue interface {
+	// Enqueue a worker
+	Enqueue(w Worker)
+	// Dequeue a worker if there's any, otherwise return nil
+	Dequeue() Worker
+}

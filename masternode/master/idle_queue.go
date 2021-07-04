@@ -1,7 +1,5 @@
 package master
 
-import "sync"
-
 // idleQNode represents a node in the idleQueue.
 type idleQNode struct {
 	worker Worker
@@ -12,7 +10,6 @@ type idleQNode struct {
 type idleQueue struct {
 	head    *idleQNode
 	tail    *idleQNode
-	mutex sync.Mutex
 }
 
 // newIdleQueue returns a queue for saving idle worker nodes.
@@ -21,9 +18,6 @@ func newIdleQueue() *idleQueue {
 }
 
 func (q *idleQueue) Enqueue(w Worker) {
-	q.mutex.Lock()
-	defer q.mutex.Unlock()
-
 	node := &idleQNode{worker: w}
 	if q.tail == nil {
 		// queue is empty
@@ -37,9 +31,6 @@ func (q *idleQueue) Enqueue(w Worker) {
 }
 
 func (q *idleQueue) Dequeue() Worker {
-	q.mutex.Lock()
-	defer q.mutex.Unlock()
-
 	if q.head == nil {
 		// queue is empty
 		return nil
