@@ -36,7 +36,7 @@ func newStage(spec StageSpec, index int, workerBuilder WorkerBuilderFunc) *stage
 		index: index,
 		workerBuilder: workerBuilder,
 		workers:       make(map[string]*WorkerState),
-		idles:         newThreadSafeIdlesQueue(newIdleQueue()),
+		idles:         newThreadSafeIdlesQueue(context.TODO(), newIdleQueue()),
 	}
 }
 
@@ -114,16 +114,18 @@ func (s *stageRunner) validate(job Job) error {
 
 func (s *stageRunner) schedule(job Job) error {
 	go func() {
-		// todo: make this blocking process cancellable (e.g. cancel if a context got cancelled)
-		// wait and block for an idle worker. the returned worker is guaranteed to be non-nil
-		w := s.idles.Dequeue()
+		// wait and block for an idle worker. the returned worker is guaranteed to be non-nil unless the queue has
+		// been disposed
+		w, disposed := s.idles.Dequeue()
+		if disposed {
+			return
+		}
 		err := s.assignJob(w, job)
 		if err != nil {
 			// todo: should we schedule the job again??
 			log.Printf("stageRunner: schedule: failed to assign job %+v to the worker %+v, err: %v", job, w, err)
 		}
 	}()
-
 
 	return nil
 }

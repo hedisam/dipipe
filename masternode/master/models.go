@@ -66,8 +66,8 @@ type Job struct {
 type BlockingIdlesQueue interface {
 	// Enqueue a worker. It needs to be thread-safe.
 	Enqueue(w Worker)
-	// Dequeue a worker. It blocks until it gets an idle worker.
-	Dequeue() Worker
+	// Dequeue a worker. It blocks until it gets an idle worker, unless the queue has been disposed.
+	Dequeue() (w Worker, disposed bool)
 	// TryDequeue tries to dequeue a worker, returns nil if there's no idle workers in the queue.
 	TryDequeue() Worker
 }
