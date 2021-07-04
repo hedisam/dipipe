@@ -3,6 +3,7 @@ package master
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // threadSafeIdlesQueue implements a thread-safe queue upon a normal one.
@@ -14,6 +15,9 @@ type threadSafeIdlesQueue struct {
 	// ctx is used to cancel out the waiting goroutines. a sync.Cond is not cancellable, therefore we utilize a
 	// global (struct-level) context object
 	ctx context.Context
+	// state is set to 1 if the context object has been cancelled. we could've determine a disposed state by
+	// checking the context's done channel but atomic operations are way faster.
+	state int32
 }
 
 func newThreadSafeIdlesQueue(ctx context.Context, q IdlesQueue) *threadSafeIdlesQueue {
@@ -31,6 +35,9 @@ func newThreadSafeIdlesQueue(ctx context.Context, q IdlesQueue) *threadSafeIdles
 func (t *threadSafeIdlesQueue) monitorContext() {
 	// block until the context's done channel gets closed
 	<-t.ctx.Done()
+
+	// dispose the queue before emitting the signal
+	t.dispose()
 
 	// the context is cancelled so we need to dispose the queue. we broadcast a signal to all the waiting goroutines
 	// so they exit the sync.Cond.Wait blocking method and get the chance to notice the disposed state of the queue.
@@ -80,8 +87,10 @@ func (t *threadSafeIdlesQueue) TryDequeue() Worker {
 }
 
 func (t *threadSafeIdlesQueue) disposed() bool {
-	select {
-	case <-t.ctx.Done(): return true
-	default: return false
-	}
+	// a value of 1 means a disposed state
+	return atomic.LoadInt32(&t.state) == 1
+}
+
+func (t *threadSafeIdlesQueue) dispose() {
+	atomic.StoreInt32(&t.state, 1)
 }
