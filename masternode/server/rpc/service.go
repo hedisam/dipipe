@@ -1,6 +1,6 @@
 package rpc
 
-import "github.com/hedisam/dipipe/master/server"
+import "github.com/hedisam/dipipe/masternode/server"
 
 // Service is a native-go rpc service. It handles the rpc messages sent by the workers.
 type Service struct {
