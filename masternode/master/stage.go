@@ -3,6 +3,7 @@ package master
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 )
@@ -22,7 +23,7 @@ type stageRunner struct {
 	// wMutex controls concurrent access to the workers.
 	wMutex sync.RWMutex
 	// idles is a queue which keeps track of idle workers
-	idles *idleQueue
+	idles BlockingIdlesQueue
 }
 
 // newStage returns an instance of stageRunner which is responsible for running and maintaining the worker nodes of a
@@ -35,7 +36,7 @@ func newStage(spec StageSpec, index int, workerBuilder WorkerBuilderFunc) *stage
 		index: index,
 		workerBuilder: workerBuilder,
 		workers:       make(map[string]*WorkerState),
-		idles:         newIdleQueue(),
+		idles:         newThreadSafeIdlesQueue(newIdleQueue()),
 	}
 }
 
@@ -74,7 +75,7 @@ func (s *stageRunner) Process(job Job) error {
 	}
 
 	// see if there's any idle worker
-	worker := s.idles.Dequeue()
+	worker := s.idles.TryDequeue()
 	if worker != nil {
 		err = s.assignJob(worker, job)
 		if err != nil {
@@ -84,7 +85,7 @@ func (s *stageRunner) Process(job Job) error {
 		return nil
 	}
 
-	// no idle worker, we have to schedule the job
+	// no idle workers, we have to schedule the job
 	err = s.schedule(job)
 	if err != nil {
 		return fmt.Errorf("stageRunner %s: Process: failed to schedule job %+v: %w", s.spec.Name(), job, err)
@@ -112,7 +113,19 @@ func (s *stageRunner) validate(job Job) error {
 }
 
 func (s *stageRunner) schedule(job Job) error {
-	panic("implement stageRunner.schedule")
+	go func() {
+		// todo: make this blocking process cancellable (e.g. cancel if a context got cancelled)
+		// wait and block for an idle worker. the returned worker is guaranteed to be non-nil
+		w := s.idles.Dequeue()
+		err := s.assignJob(w, job)
+		if err != nil {
+			// todo: should we schedule the job again??
+			log.Printf("stageRunner: schedule: failed to assign job %+v to the worker %+v, err: %v", job, w, err)
+		}
+	}()
+
+
+	return nil
 }
 
 func (s *stageRunner) spawnWorker(ctx context.Context) error {

@@ -2,14 +2,16 @@ package master
 
 import "sync"
 
+// threadSafeIdlesQueue implements a thread-safe queue upon a normal one.
 type threadSafeIdlesQueue struct {
 	cond *sync.Cond
 	q IdlesQueue
 }
 
-func newThreadSafeIdlesQueue() *threadSafeIdlesQueue {
+func newThreadSafeIdlesQueue(q IdlesQueue) *threadSafeIdlesQueue {
 	return &threadSafeIdlesQueue{
-		cond: sync.NewCond(&sync.RWMutex{}),
+		cond: sync.NewCond(&sync.Mutex{}),
+		q: q,
 	}
 }
 
