@@ -44,19 +44,21 @@ func New(workerBuilder WorkerBuilderFunc, specs ...StageSpec) *Master {
 // the worker belongs to the last stage of the pipeline.
 func (m *Master) JobDone(worker server.WorkerInfo, output server.JobOutput) {
 	// validate the worker
-	if worker.Stage() >= len(m.stages) {
+	if worker.Stage() >= len(m.stages) || worker.Stage() < 0 {
 		// worker's stage not valid
 		log.Println("[!] Master: JobDone: worker's stage not valid: index out of range:", worker.Stage())
 		return
 	}
 
-	// mark the worker as IDLE
-	stage := m.stages[worker.Stage()]
-	err := stage.MarkIdle(worker.Name())
-	if err != nil {
-		log.Printf("[!] Master: JobDone: failed to mark worker %s as idle: omitting its work output, err: %v",
-			worker.Name(), err)
-		return
+	// mark the worker as IDLE unless it belongs the input source
+	if worker.Stage() > 0 {
+		stage := m.stages[worker.Stage()]
+		err := stage.MarkIdle(worker.Name())
+		if err != nil {
+			log.Printf("[!] Master: JobDone: failed to mark worker %s as idle: omitting its work output, err: %v",
+				worker.Name(), err)
+			return
+		}
 	}
 
 	// the last stage is the pipeline's sink. for now nothing's needed if the worker belongs to a sink.
@@ -69,7 +71,7 @@ func (m *Master) JobDone(worker server.WorkerInfo, output server.JobOutput) {
 
 	// tell the next stage to process the output
 	nextStage := m.stages[worker.Stage()+1] // notice how we've reserved the first (0th) stage for the input-source
-	err = nextStage.Process(Job{StorageName: output.StorageName(), Path: output.Path()})
+	err := nextStage.Process(Job{StorageName: output.StorageName(), Path: output.Path()})
 	if err != nil {
 		log.Printf("[!] Master: JobDone: stage %s failed to process the output of the previous one: %v",
 			nextStage.spec.Name(), err)
