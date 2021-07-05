@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -40,12 +41,12 @@ type stageRunner struct {
 // idGen generates unique ids used for creating unique names for the workers and ids the jobs.
 func newStage(spec StageSpec, index int, workerBuilder WorkerBuilderFunc, idGen UniqueIdGenerator) *stageRunner {
 	return &stageRunner{
-		spec: spec,
-		index: index,
+		spec:          spec,
+		index:         index,
 		workerBuilder: workerBuilder,
 		workers:       make(map[string]*WorkerState),
 		idles:         newThreadSafeIdlesQueue(context.TODO(), newIdleQueue()),
-		idGen: idGen,
+		idGen:         idGen,
 	}
 }
 
@@ -63,7 +64,7 @@ func (s *stageRunner) MarkIdle(workerName string) error {
 	// the worker could've faced a timeout while sending ttl checks therefore the master has marked it unhealthy
 	if worker.state != Busy {
 		s.wMutex.Unlock()
-		return fmt.Errorf("stageRunner %s: MarkIdle: worker %s's current state is not STATE_BUSY - its work " +
+		return fmt.Errorf("stageRunner %s: MarkIdle: worker %s's current state is not STATE_BUSY - its work "+
 			"output should be omitted", s.spec.Name(), workerName)
 	}
 
@@ -102,10 +103,6 @@ func (s *stageRunner) ValidateExecutedJob(workerName, jobId string) error {
 
 // Process the given input. It assigns the job to an idle worker if there's any, otherwise spawns a new one.
 func (s *stageRunner) Process(job Job) error {
-	// assign a unique id to this job so we can know which worker is responsible for executing it.
-	// todo: what if this is a rescheduled job? then it's already in the job's list with an id
-	job.Id = "job:" + s.idGen.Id()
-
 	err := s.validate(job)
 	if err != nil {
 		return fmt.Errorf("stageRunner %s: Process: invalid job: %w", s.spec.Name(), err)
@@ -154,7 +151,7 @@ func (s *stageRunner) validate(job Job) error {
 		}
 	}
 
-	return fmt.Errorf("validate: this stage's workers don't have access to the job's input file storage: " +
+	return fmt.Errorf("validate: this stage's workers don't have access to the job's input file storage: "+
 		"stage's mounted storages: %v, job: %+v", s.spec.Storages(), job)
 }
 
@@ -199,6 +196,32 @@ func (s *stageRunner) spawnWorker(ctx context.Context) error {
 	return nil
 }
 
+// assignJob assigns the provided job to be executed by the specified worker. It keeps track of the assigned worker to
+// the job.
 func (s *stageRunner) assignJob(worker Worker, job Job) error {
-	panic("implement stageRunner.assignJob")
+	// a unique job id is needed to know which worker is responsible for executing it
+	// only assign a new unique id if this a new and fresh job
+	var ok bool
+	if strings.TrimSpace(job.Id) != "" {
+		s.jMutex.RLock()
+		_, ok = s.jobs[job.Id]
+		s.jMutex.RUnlock()
+	}
+
+	if !ok {
+		// it's a new/fresh job
+		job.Id = "job:" + s.idGen.Id()
+	}
+
+	err := worker.Assign(context.TODO(), job)
+	if err != nil {
+		return fmt.Errorf("assignJob: failed to assign job %+v to worker %s: %w", job, worker.Name(), err)
+	}
+
+	// keep track of the worker that is responsible for this job
+	s.jMutex.Lock()
+	s.jobs[job.Id] = worker.Name()
+	s.jMutex.Unlock()
+
+	return nil
 }

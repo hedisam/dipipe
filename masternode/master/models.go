@@ -46,6 +46,8 @@ type Worker interface {
 	Spawn(ctx context.Context) error
 	// Check the worker node if it's healthy.
 	Check(ctx context.Context) (bool, error)
+	// Assign a job to the worker
+	Assign(ctx context.Context, job Job) error
 }
 
 type WorkerInfo interface {
