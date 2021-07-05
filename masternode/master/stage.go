@@ -25,14 +25,16 @@ type stageRunner struct {
 	// idles is a queue which keeps track of idle workers.
 	idles BlockingIdlesQueue
 	// idGen generates unique names for the workers.
-	idGen WorkerIdGenerator
+	idGen UniqueIdGenerator
 }
 
 // newStage returns an instance of stageRunner which is responsible for running and maintaining the worker nodes of a
 // stage in the pipeline.
 // spec is the specification of the stage (e.g. the plugin of the stage, max workers allowed, name).
+// index of this stage in the pipeline (e.g. 1th, 5th)
 // workerBuilder builds and returns a worker node which will be managed by this stage.
-func newStage(spec StageSpec, index int, workerBuilder WorkerBuilderFunc, idGen WorkerIdGenerator) *stageRunner {
+// idGen generates unique ids used for creating unique names for the workers and ids the jobs.
+func newStage(spec StageSpec, index int, workerBuilder WorkerBuilderFunc, idGen UniqueIdGenerator) *stageRunner {
 	return &stageRunner{
 		spec: spec,
 		index: index,
@@ -72,6 +74,9 @@ func (s *stageRunner) MarkIdle(workerName string) error {
 
 // Process the given input. It assigns the job to an idle worker if there's any, otherwise spawns a new one.
 func (s *stageRunner) Process(job Job) error {
+	// assign a unique id to this job so we can know which worker is responsible for executing it.
+	job.Id = "job:" + s.idGen.Id()
+
 	err := s.validate(job)
 	if err != nil {
 		return fmt.Errorf("stageRunner %s: Process: invalid job: %w", s.spec.Name(), err)
@@ -146,16 +151,11 @@ func (s *stageRunner) schedule(job Job) error {
 // spawnWorker creates and runs a new worker. It doesn't know about the type and the way that the worker gets created
 // and spawned; it could be an executable program or a Docker container.
 func (s *stageRunner) spawnWorker(ctx context.Context) error {
-	// a unique id for our new worker
-	id, err := s.idGen.Id()
-	if err != nil {
-		return fmt.Errorf("spawnWorker: failed to generate a unique id for the worker: %w", err)
-	}
-	// the unique name of the worker
-	name := fmt.Sprintf("stage:%d:%s:worker:%s", s.index, s.spec.Name(), id)
+	// a unique name of the worker
+	name := fmt.Sprintf("stage:%d:%s:worker:%s", s.index, s.spec.Name(), s.idGen.Id())
 	// instantiate and spawn a worker node
 	worker := s.workerBuilder(name, s.index, s.spec.Plugin())
-	err = worker.Spawn(ctx)
+	err := worker.Spawn(ctx)
 	if err != nil {
 		return fmt.Errorf("spawnWorker: failed to spawn a new worker: %w", err)
 	}

@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-// workerIdGen implements WorkerIdGenerator.
+// workerIdGen implements UniqueIdGenerator.
 type workerIdGen struct {
 	shId *shortid.Shortid
 }
 
 func newWorkerIdGen() (*workerIdGen, error) {
-	shId, err := shortid.New(1, shortid.DefaultABC, uint64(time.Now().Unix()))
+	shId, err := shortid.New(2, shortid.DefaultABC, uint64(time.Now().Unix()))
 	if err != nil {
 		return nil, fmt.Errorf("newWrokerIdGen: failed to instantiate a shortid generator: %w", err)
 	}
@@ -20,13 +20,13 @@ func newWorkerIdGen() (*workerIdGen, error) {
 	return &workerIdGen{shId: shId}, nil
 }
 
-// Id implements WorkerIdGenerator.
-func (w *workerIdGen) Id() (string, error) {
+// Id implements UniqueIdGenerator.
+func (w *workerIdGen) Id() string {
 	id, err := w.shId.Generate()
 	if err != nil {
-		return "", fmt.Errorf("workerIdGen: Id: failed to generate a unique id: %w", err)
+		panic(fmt.Errorf("workerIdGen: Id: failed to generate a unique id: %w", err))
 	}
 
-	return id, nil
+	return id
 }
 

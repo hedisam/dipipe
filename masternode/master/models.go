@@ -56,8 +56,8 @@ type WorkerState struct {
 
 // Job needs to be done by a worker. It points to the input data which needs processing.
 type Job struct {
-	// todo: each job needs to have a unique id so it can be tracked to see which worker is responsible for it
-	// todo: this can help us to discard processed jobs done by unhealthy workers. (also a timestamp)
+	// Id is a unique id to know which worker is responsible for this job.
+	Id string
 	// StorageName name of the storage where the input data is saved
 	StorageName string
 	// Path to the input data
@@ -82,8 +82,8 @@ type IdlesQueue interface {
 	Dequeue() Worker
 }
 
-// WorkerIdGenerator abstracts the id generating process for workers.
-type WorkerIdGenerator interface {
+// UniqueIdGenerator abstracts the id generating process used for workers and jobs.
+type UniqueIdGenerator interface {
 	// Id returns a unique id.
-	Id() (string, error)
+	Id() string
 }

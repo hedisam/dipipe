@@ -50,7 +50,7 @@ func (m *Master) JobDone(worker server.WorkerInfo, output server.JobOutput) {
 		return
 	}
 
-	// mark the worker as IDLE unless it belongs the input source
+	// mark the worker as IDLE unless it belongs to the input source
 	if worker.Stage() > 0 {
 		stage := m.stages[worker.Stage()]
 		err := stage.MarkIdle(worker.Name())
