@@ -1,7 +1,6 @@
 package master
 
 import (
-	"github.com/hedisam/dipipe/masternode/server"
 	"log"
 )
 
@@ -42,7 +41,7 @@ func New(workerBuilder WorkerBuilderFunc, specs ...StageSpec) *Master {
 
 // JobDone a worker has finished its job. It lets the next stage to work on the output as its input. Nothing is done if
 // the worker belongs to the last stage of the pipeline.
-func (m *Master) JobDone(worker server.WorkerInfo, output server.JobOutput) {
+func (m *Master) JobDone(worker WorkerInfo, execJob ExecutedJob) {
 	// validate the worker
 	if worker.Stage() >= len(m.stages) || worker.Stage() < 0 {
 		// worker's stage not valid
@@ -62,7 +61,7 @@ func (m *Master) JobDone(worker server.WorkerInfo, output server.JobOutput) {
 			return
 		}
 		// validate the executed job
-		err = stage.ValidateExecutedJob(worker.Name(), output.ID())
+		err = stage.ValidateExecutedJob(worker.Name(), execJob.ID())
 		if err != nil {
 			log.Printf("[!] Master: JobDone: invalid executed job: %v", err)
 			return
@@ -71,25 +70,25 @@ func (m *Master) JobDone(worker server.WorkerInfo, output server.JobOutput) {
 
 	// the last stage is the pipeline's sink. for now nothing's needed if the worker belongs to a sink.
 	// TODO: SINK'S OUTPUT'S HERE, DO STH WITH IT.
-	if worker.Stage() == len(m.stages) - 1 {
+	if worker.Stage() == len(m.stages)-1 {
 		log.Printf("[!] Master: JobDone: sink %s processed an input & saved output at %s:%s", worker.Name(),
-			output.StorageName(), output.Path())
+			execJob.OutputStorage(), execJob.OutputPath())
 		return
 	}
 
 	// tell the next stage to process the output
 	nextStage := m.stages[worker.Stage()+1] // notice how we've reserved the first (0th) stage for the input-source
-	err := nextStage.Process(Job{StorageName: output.StorageName(), Path: output.Path()})
+	err := nextStage.Process(Job{StorageName: execJob.OutputStorage(), Path: execJob.OutputPath()})
 	if err != nil {
 		log.Printf("[!] Master: JobDone: stage %s failed to process the output of the previous one: %v",
 			nextStage.spec.Name(), err)
 	}
 }
 
-func (m *Master) WorkerStarted(worker server.WorkerInfo) {
+func (m *Master) WorkerStarted(worker WorkerInfo) {
 	panic("implement me")
 }
 
-func (m *Master) TTLCheck(worker server.WorkerInfo) {
+func (m *Master) TTLCheck(worker WorkerInfo) {
 	panic("implement me")
 }

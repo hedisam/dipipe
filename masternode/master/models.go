@@ -48,6 +48,13 @@ type Worker interface {
 	Check(ctx context.Context) (bool, error)
 }
 
+type WorkerInfo interface {
+	// Name of the worker.
+	Name() string
+	// Stage returns the index of the worker's stage in the pipeline.
+	Stage() int
+}
+
 // WorkerState holds a worker along with its state.
 type WorkerState struct {
 	worker Worker
@@ -62,6 +69,17 @@ type Job struct {
 	StorageName string
 	// Path to the input data
 	Path string
+}
+
+// ExecutedJob represents an executed job along with the output.
+type ExecutedJob interface {
+	// ID returns the unique id of the job.
+	ID() string
+	// OutputStorage returns the name of the storage which the job's output has been saved in. It would be the name of
+	// the volume mounted to the container in case of utilizing Docker.
+	OutputStorage() string
+	// OutputPath returns the path to the output file.
+	OutputPath() string
 }
 
 // BlockingIdlesQueue is a thread-safe queue used to hold idle workers.
