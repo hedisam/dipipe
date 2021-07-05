@@ -29,6 +29,8 @@ type StageSpec interface {
 	MaxWorkersNum() int
 	// Plugin returns this stage's Plugin that contains the user-defined code for the Processor.
 	Plugin() StagePlugin
+	// Storages returns a list of storages which are accessible (mounted to) from the workers of this stage.
+	Storages() []string
 }
 
 // WorkerBuilderFunc defines an abstraction to decouple a worker node instantiation.

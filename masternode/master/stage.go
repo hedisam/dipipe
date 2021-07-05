@@ -74,7 +74,7 @@ func (s *stageRunner) MarkIdle(workerName string) error {
 func (s *stageRunner) Process(job Job) error {
 	err := s.validate(job)
 	if err != nil {
-		return fmt.Errorf("stageRunner %s: Process: %w", s.spec.Name(), err)
+		return fmt.Errorf("stageRunner %s: Process: invalid job: %w", s.spec.Name(), err)
 	}
 
 	// see if there's any idle worker
@@ -111,10 +111,20 @@ func (s *stageRunner) Process(job Job) error {
 	return nil
 }
 
+// validate determines whether a job can be done by this stage.
 func (s *stageRunner) validate(job Job) error {
-	panic("implement stageRunner.validate")
+	// check if the storage which the job's input is saved on is accessible to the workers of this stage
+	for _, stg := range s.spec.Storages() {
+		if stg == job.StorageName {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("validate: this stage's workers don't have access to the job's input file storage: " +
+		"stage's mounted storages: %v, job: %+v", s.spec.Storages(), job)
 }
 
+// schedule a job to be executed whenever there's an available worker.
 func (s *stageRunner) schedule(job Job) error {
 	go func() {
 		// wait and block for an idle worker. the returned worker is guaranteed to be non-nil unless the queue has
@@ -133,6 +143,8 @@ func (s *stageRunner) schedule(job Job) error {
 	return nil
 }
 
+// spawnWorker creates and runs a new worker. It doesn't know about the type and the way that the worker gets created
+// and spawned; it could be an executable program or a Docker container.
 func (s *stageRunner) spawnWorker(ctx context.Context) error {
 	// a unique id for our new worker
 	id, err := s.idGen.Id()
@@ -150,6 +162,7 @@ func (s *stageRunner) spawnWorker(ctx context.Context) error {
 
 	atomic.AddInt32(&s.runningWorkersCnt, 1)
 
+	// index the workers to keep track of them and making it possible to access them by their name
 	s.wMutex.Lock()
 	s.workers[name] = &WorkerState{worker: worker, state: NotStarted}
 	s.wMutex.Unlock()
