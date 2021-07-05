@@ -17,7 +17,10 @@ type WorkerInfo interface {
 	Name() string
 }
 
+// JobOutput represents an executed job by its id and output.
 type JobOutput interface {
+	// ID returns the unique id of the job.
+	ID() string
 	// StorageName returns the name of the storage; it would be the name of the volume mounted to the container in
 	// case of utilizing Docker.
 	StorageName() string

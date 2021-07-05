@@ -50,13 +50,21 @@ func (m *Master) JobDone(worker server.WorkerInfo, output server.JobOutput) {
 		return
 	}
 
-	// mark the worker as IDLE unless it belongs to the input source
+	// unless the worker doesn't belong to the first stage (the input source), mark the worker as STATE_IDLE and also,
+	// validate the executed job because it could be reassigned to another worker.
 	if worker.Stage() > 0 {
 		stage := m.stages[worker.Stage()]
+		// mark as idle
 		err := stage.MarkIdle(worker.Name())
 		if err != nil {
 			log.Printf("[!] Master: JobDone: failed to mark worker %s as idle: omitting its work output, err: %v",
 				worker.Name(), err)
+			return
+		}
+		// validate the executed job
+		err = stage.ValidateExecutedJob(worker.Name(), output.ID())
+		if err != nil {
+			log.Printf("[!] Master: JobDone: invalid executed job: %v", err)
 			return
 		}
 	}

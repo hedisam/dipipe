@@ -26,6 +26,10 @@ type stageRunner struct {
 	idles BlockingIdlesQueue
 	// idGen generates unique names for the workers.
 	idGen UniqueIdGenerator
+	// jobs holds a list of this stage's jobs and their corresponding workers responsible for them.
+	jobs map[string]string
+	// jMutex controls concurrent access to jobs.
+	jMutex sync.RWMutex
 }
 
 // newStage returns an instance of stageRunner which is responsible for running and maintaining the worker nodes of a
@@ -55,7 +59,8 @@ func (s *stageRunner) MarkIdle(workerName string) error {
 		return fmt.Errorf("stageRunner %s: MarkIdle: worker %s not found", s.spec.Name(), workerName)
 	}
 
-	// for instance, how this worker could be processing when it's not marked as BUSY? there must be an inconsistency.
+	// how this worker could be processing when it's not marked as BUSY? there must be an inconsistency, for instance,
+	// the worker could've faced a timeout while sending ttl checks therefore the master has marked it unhealthy
 	if worker.state != Busy {
 		s.wMutex.Unlock()
 		return fmt.Errorf("stageRunner %s: MarkIdle: worker %s's current state is not STATE_BUSY - its work " +
@@ -72,9 +77,33 @@ func (s *stageRunner) MarkIdle(workerName string) error {
 	return nil
 }
 
+// ValidateExecutedJob checks whether this job has been reassigned or not, if so, then this job's output/result must be
+// ignored.
+func (s *stageRunner) ValidateExecutedJob(workerName, jobId string) error {
+	s.jMutex.RLock()
+	// get the responsible worker for this job
+	respWorker, ok := s.jobs[jobId]
+	s.jMutex.RUnlock()
+
+	// first we need to have a record of this job
+	if !ok {
+		return fmt.Errorf("stageRunner %s: ValidateExecutedJob: job %s not found",
+			s.spec.Name(), jobId)
+	}
+
+	// the worker's name that is responsible for this job has to match with the provided workerName
+	if respWorker != workerName {
+		return fmt.Errorf("stageRunner %s: ValidateExecutedJob: worker %s is not responsible for job %s",
+			s.spec.Name(), workerName, jobId)
+	}
+
+	return nil
+}
+
 // Process the given input. It assigns the job to an idle worker if there's any, otherwise spawns a new one.
 func (s *stageRunner) Process(job Job) error {
 	// assign a unique id to this job so we can know which worker is responsible for executing it.
+	// todo: what if this is a rescheduled job? then it's already in the job's list with an id
 	job.Id = "job:" + s.idGen.Id()
 
 	err := s.validate(job)
