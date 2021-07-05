@@ -20,13 +20,19 @@ func New(workerBuilder WorkerBuilderFunc, specs ...StageSpec) *Master {
 	// creating the pipeline's stages
 	// each stageRunner spawns a bunch of worker nodes proportional to its weight
 
+	// a unique id generator is needed for building unique names for the workers
+	idGen, err := newWorkerIdGen()
+	if err != nil {
+		panic(err)
+	}
+
 	// instantiate and run each stage
 	var stages = make([]*stageRunner, len(specs)+1)
 	// reserve the first stage for the input-source which is the library running on the user's machine that is providing
 	// us the original input data
 	stages[0] = nil
 	for i, spec := range specs {
-		stages[i+1] = newStage(spec, i+1, workerBuilder)
+		stages[i+1] = newStage(spec, i+1, workerBuilder, idGen)
 	}
 
 	return &Master{

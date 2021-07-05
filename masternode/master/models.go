@@ -79,3 +79,9 @@ type IdlesQueue interface {
 	// Dequeue a worker if there's any, otherwise return nil
 	Dequeue() Worker
 }
+
+// WorkerIdGenerator abstracts the id generating process for workers.
+type WorkerIdGenerator interface {
+	// Id returns a unique id.
+	Id() (string, error)
+}

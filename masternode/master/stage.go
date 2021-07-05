@@ -22,21 +22,24 @@ type stageRunner struct {
 	runningWorkersCnt int32
 	// wMutex controls concurrent access to the workers.
 	wMutex sync.RWMutex
-	// idles is a queue which keeps track of idle workers
+	// idles is a queue which keeps track of idle workers.
 	idles BlockingIdlesQueue
+	// idGen generates unique names for the workers.
+	idGen WorkerIdGenerator
 }
 
 // newStage returns an instance of stageRunner which is responsible for running and maintaining the worker nodes of a
 // stage in the pipeline.
 // spec is the specification of the stage (e.g. the plugin of the stage, max workers allowed, name).
 // workerBuilder builds and returns a worker node which will be managed by this stage.
-func newStage(spec StageSpec, index int, workerBuilder WorkerBuilderFunc) *stageRunner {
+func newStage(spec StageSpec, index int, workerBuilder WorkerBuilderFunc, idGen WorkerIdGenerator) *stageRunner {
 	return &stageRunner{
 		spec: spec,
 		index: index,
 		workerBuilder: workerBuilder,
 		workers:       make(map[string]*WorkerState),
 		idles:         newThreadSafeIdlesQueue(context.TODO(), newIdleQueue()),
+		idGen: idGen,
 	}
 }
 
@@ -131,13 +134,16 @@ func (s *stageRunner) schedule(job Job) error {
 }
 
 func (s *stageRunner) spawnWorker(ctx context.Context) error {
-	// a unique name for our new worker
-	// todo: create a unique name
-	var name string
-
+	// a unique id for our new worker
+	id, err := s.idGen.Id()
+	if err != nil {
+		return fmt.Errorf("spawnWorker: failed to generate a unique id for the worker: %w", err)
+	}
+	// the unique name of the worker
+	name := fmt.Sprintf("stage:%d:%s:worker:%s", s.index, s.spec.Name(), id)
 	// instantiate and spawn a worker node
 	worker := s.workerBuilder(name, s.index, s.spec.Plugin())
-	err := worker.Spawn(ctx)
+	err = worker.Spawn(ctx)
 	if err != nil {
 		return fmt.Errorf("spawnWorker: failed to spawn a new worker: %w", err)
 	}
